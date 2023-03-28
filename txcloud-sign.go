@@ -22,7 +22,7 @@ const (
 	date_layout = "2006-01-02"
 )
 
-func MakeTxCloudSignV30Headers(secretId, secretKey, httpMethod, service, action, region string, URI string, signedHeaders map[string]string, body []byte) (headers map[string]string) {
+func MakeTxCloudSignV30Headers(secretId, secretKey, httpMethod, service, action, region, version string, URI string, signedHeaders map[string]string, body []byte) (headers map[string]string) {
 	signature, timestamp, utc0Date, sortedKeys := TxCloudSignV30(secretId, secretKey, httpMethod, service, action, region, URI, signedHeaders, body)
 	headers = map[string]string{
 		"Authorization": fmt.Sprintf("%s Credential=%s/%s/%s/%s,SignedHeaders=%s,Signature=%s",
@@ -31,9 +31,11 @@ func MakeTxCloudSignV30Headers(secretId, secretKey, httpMethod, service, action,
 			sortedKeys,
 			signature,
 		),
-		"X-TC-Version": "2017-03-12",
+		"X-TC-Version": version,
 		"X-TC-Timestamp": timestamp,
-		"X-TC-Region": region,
+	}
+	if len(region) > 0 {
+		headers["X-TC-Region"] = region
 	}
 
 	for k, v := range signedHeaders {
