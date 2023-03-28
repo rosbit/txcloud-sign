@@ -145,10 +145,10 @@ func makeCanonicalHeaders(signedHeaders map[string]string) (sortedKeys string, c
 	for i, key := range keys {
 		res[i] = fmt.Sprintf("%s:%v\n", key, headers[key])
 	}
+	canonicalHeaders = strings.Join(res, "")
 
 	// 头部 key 统一转成小写；
 	// 多个头部 key（小写）按照 ASCII 升序进行拼接，并且以分号（;）分隔。
 	sortedKeys = strings.Join(keys, ";")
-	canonicalHeaders = strings.Join(res, "")
 	return
 }
