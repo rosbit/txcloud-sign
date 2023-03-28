@@ -128,7 +128,7 @@ func makeChainedHmacSha256Key(key []byte, s ...string) (resKey []byte) {
 
 func makeCanonicalHeaders(signedHeaders map[string]string) (sortedKeys string, canonicalHeaders string) {
 	//  头部 key 和 value 统一转成小写，并去掉首尾空格，按照 key:value\n 格式拼接；
-    //  多个头部，按照头部 key（小写）的 ASCII 升序进行拼接。
+	//  多个头部，按照头部 key（小写）的 ASCII 升序进行拼接。
 	keys := make([]string, len(signedHeaders))
 	headers := make(map[string]string)
 
