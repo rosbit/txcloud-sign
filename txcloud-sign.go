@@ -50,30 +50,6 @@ func TxCloudSignV30(secretId, secretKey, httpMethod, service, action, region str
 
 	var canonicalHeaders string
 	sortedKeys, canonicalHeaders = makeCanonicalHeaders(signedHeaders)
-	canonicalRequestIn := makeChainedData(
-		httpMethod,   // HTTPRequestMethod
-		"/",          // CanonicalURI: URI 参数，API 3.0 固定为正斜杠（/）
-		func()string{ // CanonicalQueryString
-			if httpMethod == "POST" {
-				return "" // 对于 POST 请求，固定为空字符串""
-			}
-			// 对于 GET 请求，则为 URL 中问号（?）后面的字符串内容URLEncode，字符集 UTF-8
-			if pos := strings.IndexByte(URI, '?'); pos >= 0 {
-				return url.QueryEscape(URI[pos+1:])
-			}
-			return ""
-		}(),
-		canonicalHeaders,  // CanonicalHeaders
-		sortedKeys,        // SignedHeaders
-		func() string {    // HashedRequestPayload: Lowercase(HexEncode(Hash.SHA256(RequestPayload)))
-			h := sha256.New()
-			if len(body) > 0 {
-				h.Write(body)
-			}
-			return fmt.Sprintf("%x", h.Sum(nil))
-		}(),
-	)
-	hashedCanonicalRequest := makeChainedHash(sha256.New(), canonicalRequestIn)
 
 	now := time.Now().UTC()
 	timestamp = fmt.Sprintf("%d", now.Unix())
@@ -81,19 +57,53 @@ func TxCloudSignV30(secretId, secretKey, httpMethod, service, action, region str
 	utc0Date = now.Format(date_layout)
 	// utc0Date = "2019-02-25"
 
-	strToSignIn := makeChainedData(
-		sign_algo, // Algorithm: 签名算法，目前固定为 TC3-HMAC-SHA256
-		timestamp, // RequestTimestamp: 请求头部的公共参数 X-TC-Timestamp 取值，取当前时间 UNIX 时间戳，精确到秒
-		fmt.Sprintf("%s/%s/%s", utc0Date, service, tc3_request), // CredentialScope: Date/service/tc3_request，包含日期、所请求的服务和终止字符串（tc3_request）。
-		                                                         // Date 为 UTC 标准时间的日期，取值需要和公共参数 X-TC-Timestamp 换算的 UTC 标准时间日期一致；
-		                                                         // service 为产品名，必须与调用的产品域名一致
-		hashedCanonicalRequest, // HashedCanonicalRequest: 前述步骤拼接所得规范请求串的哈希值，计算伪代码为 Lowercase(HexEncode(Hash.SHA256(CanonicalRequest)))
-	)
 	signature = makeChainedHash(
+		// HMAC_SHA256(SecretSigning, StringToSign): SecretSigning为派生密钥
 		hmac.New(sha256.New,
+			// 计算派生签名密钥: 
+			//    SecretDate = HMAC_SHA256("TC3" + SecretKey, Date)
+			//    SecretService = HMAC_SHA256(SecretDate, Service)
+			//    SecretSigning = HMAC_SHA256(SecretService, "tc3_request")
 			makeChainedHmacSha256Key([]byte(fmt.Sprintf("TC3%s", secretKey)), utc0Date, service, tc3_request),
 		),
-		strToSignIn,
+		// 合成 StringToSign = Algorithm + \n + RequestTimestamp + \n + CredentialScope + \n + HashedCanonicalRequest
+		//      实际实现无需字符串拼接
+		makeChainedData(
+			sign_algo, // Algorithm: 签名算法，目前固定为 TC3-HMAC-SHA256
+			timestamp, // RequestTimestamp: 请求头部的公共参数 X-TC-Timestamp 取值，取当前时间 UNIX 时间戳，精确到秒
+			fmt.Sprintf("%s/%s/%s", utc0Date, service, tc3_request), // CredentialScope: Date/service/tc3_request，包含日期、所请求的服务和终止字符串（tc3_request）。
+																	 // Date 为 UTC 标准时间的日期，取值需要和公共参数 X-TC-Timestamp 换算的 UTC 标准时间日期一致；
+																	 // service 为产品名，必须与调用的产品域名一致
+			// HashedCanonicalRequest: 前述步骤拼接所得规范请求串的哈希值，计算伪代码为 Lowercase(HexEncode(Hash.SHA256(CanonicalRequest)))
+			makeChainedHash(
+				sha256.New(),
+				// 合成: CanonicalRequest = HTTPRequestMethod + '\n' + CanonicalURI + '\n' + CanonicalQueryString + '\n' + CanonicalHeaders + '\n' + SignedHeaders + '\n' + HashedRequestPayload
+				//       实际计算无需拼接
+				makeChainedData(
+					httpMethod,   // HTTPRequestMethod
+					"/",          // CanonicalURI: URI 参数，API 3.0 固定为正斜杠（/）
+					func()string{ // CanonicalQueryString
+						if httpMethod == "POST" {
+							return "" // 对于 POST 请求，固定为空字符串""
+						}
+						// 对于 GET 请求，则为 URL 中问号（?）后面的字符串内容URLEncode，字符集 UTF-8
+						if pos := strings.IndexByte(URI, '?'); pos >= 0 {
+							return url.QueryEscape(URI[pos+1:])
+						}
+						return ""
+					}(),
+					canonicalHeaders,  // CanonicalHeaders
+					sortedKeys,        // SignedHeaders
+					func() string {    // HashedRequestPayload: Lowercase(HexEncode(Hash.SHA256(RequestPayload)))
+						h := sha256.New()
+						if len(body) > 0 {
+							h.Write(body)
+						}
+						return fmt.Sprintf("%x", h.Sum(nil))
+					}(),
+				),
+			),
+		),
 	)
 	return
 }
