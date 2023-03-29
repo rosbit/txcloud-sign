@@ -6,13 +6,13 @@ package txcsign
 import (
 	"crypto/sha256"
 	"crypto/hmac"
-	"hash"
 	"strings"
+	"net/url"
+	"hash"
 	"time"
 	"io"
 	"fmt"
 	"sort"
-	"net/url"
 )
 
 const (
@@ -66,8 +66,7 @@ func TxCloudSignV30(secretId, secretKey, httpMethod, service, action, region str
 			//    SecretSigning = HMAC_SHA256(SecretService, "tc3_request")
 			makeChainedHmacSha256Key([]byte(fmt.Sprintf("TC3%s", secretKey)), utc0Date, service, tc3_request),
 		),
-		// 合成 StringToSign = Algorithm + \n + RequestTimestamp + \n + CredentialScope + \n + HashedCanonicalRequest
-		//      实际实现无需字符串拼接
+		// 合成 StringToSign = Algorithm + \n + RequestTimestamp + \n + CredentialScope + \n + HashedCanonicalRequest (实际实现无需字符串拼接)
 		makeChainedData(
 			sign_algo, // Algorithm: 签名算法，目前固定为 TC3-HMAC-SHA256
 			timestamp, // RequestTimestamp: 请求头部的公共参数 X-TC-Timestamp 取值，取当前时间 UNIX 时间戳，精确到秒
@@ -77,8 +76,7 @@ func TxCloudSignV30(secretId, secretKey, httpMethod, service, action, region str
 			// HashedCanonicalRequest: 前述步骤拼接所得规范请求串的哈希值，计算伪代码为 Lowercase(HexEncode(Hash.SHA256(CanonicalRequest)))
 			makeChainedHash(
 				sha256.New(),
-				// 合成: CanonicalRequest = HTTPRequestMethod + '\n' + CanonicalURI + '\n' + CanonicalQueryString + '\n' + CanonicalHeaders + '\n' + SignedHeaders + '\n' + HashedRequestPayload
-				//       实际计算无需拼接
+				// 合成: CanonicalRequest = HTTPRequestMethod + '\n' + CanonicalURI + '\n' + CanonicalQueryString + '\n' + CanonicalHeaders + '\n' + SignedHeaders + '\n' + HashedRequestPayload (实际计算无需拼接)
 				makeChainedData(
 					httpMethod,   // HTTPRequestMethod
 					"/",          // CanonicalURI: URI 参数，API 3.0 固定为正斜杠（/）
@@ -94,13 +92,11 @@ func TxCloudSignV30(secretId, secretKey, httpMethod, service, action, region str
 					}(),
 					canonicalHeaders,  // CanonicalHeaders
 					sortedKeys,        // SignedHeaders
-					func() string {    // HashedRequestPayload: Lowercase(HexEncode(Hash.SHA256(RequestPayload)))
-						h := sha256.New()
-						if len(body) > 0 {
-							h.Write(body)
-						}
-						return fmt.Sprintf("%x", h.Sum(nil))
-					}(),
+					// HashedRequestPayload: Lowercase(HexEncode(Hash.SHA256(RequestPayload)))
+					makeChainedHash(
+						sha256.New(),
+						makeChainedData(makePayload(body)),
+					),
 				),
 			),
 		),
@@ -119,6 +115,13 @@ func makeChainedData(s ...string) (it <-chan string) {
 		close(dataChain)
 	}()
 	return dataChain
+}
+
+func makePayload(body []byte) string {
+	if len(body) > 0 {
+		return string(body)
+	}
+	return ""
 }
 
 func makeChainedHash(h hash.Hash, in <-chan string) string {
